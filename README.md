@@ -1,2 +1,2 @@
-# QuantEdge-AI
-Richie Rich
+# Richie Rich 💰
+Building something...
