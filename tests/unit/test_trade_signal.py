@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -6,8 +7,9 @@ from pydantic import ValidationError
 
 from quantedge.paper_trading.models import (
     TradeSignal,
+    SignalDecision,
+    SignalDecisionType,
     SignalDirection,
-    SignalStatus,
 )
 
 
@@ -29,11 +31,13 @@ def valid_long_signal():
     }
 
 
+# Original TradeSignal tests
+
 def test_create_valid_long_signal(valid_long_signal):
     signal = TradeSignal(**valid_long_signal)
 
     assert signal.direction == SignalDirection.LONG
-    assert signal.status == SignalStatus.PENDING
+    assert signal.suggested_entry == Decimal("25100")
 
 
 def test_create_valid_short_signal(valid_long_signal):
@@ -94,7 +98,7 @@ def test_signal_is_immutable(valid_long_signal):
     signal = TradeSignal(**valid_long_signal)
 
     with pytest.raises(ValidationError):
-        signal.status = SignalStatus.ACCEPTED
+        signal.suggested_entry = Decimal("26000")
 
 
 def test_unknown_field_not_allowed(valid_long_signal):
@@ -102,3 +106,57 @@ def test_unknown_field_not_allowed(valid_long_signal):
 
     with pytest.raises(ValidationError):
         TradeSignal(**valid_long_signal)
+
+
+# New SignalDecision validation tests
+
+def test_rejected_signal_decision_requires_reason():
+    with pytest.raises(ValidationError, match="reason is required"):
+        SignalDecision(
+            decision_id="DEC-001",
+            signal_id="SIG-001",
+            decision=SignalDecisionType.REJECT,
+            decided_at=datetime(
+                2026, 11, 20, 10, 0, tzinfo=timezone.utc
+            ),
+        )
+
+
+def test_rejected_signal_decision_rejects_blank_reason():
+    with pytest.raises(ValidationError, match="reason is required"):
+        SignalDecision(
+            decision_id="DEC-002",
+            signal_id="SIG-001",
+            decision=SignalDecisionType.REJECT,
+            decided_at=datetime(
+                2026, 11, 20, 10, 0, tzinfo=timezone.utc
+            ),
+            reason="   ",
+        )
+
+
+def test_accepted_signal_decision_allows_missing_reason():
+    decision = SignalDecision(
+        decision_id="DEC-003",
+        signal_id="SIG-001",
+        decision=SignalDecisionType.ACCEPT,
+        decided_at=datetime(
+            2026, 11, 20, 10, 0, tzinfo=timezone.utc
+        ),
+    )
+
+    assert decision.reason is None
+
+
+def test_signal_decision_strips_reason_whitespace():
+    decision = SignalDecision(
+        decision_id="DEC-004",
+        signal_id="SIG-001",
+        decision=SignalDecisionType.REJECT,
+        decided_at=datetime(
+            2026, 11, 20, 10, 0, tzinfo=timezone.utc
+        ),
+        reason="  Market conditions changed  ",
+    )
+
+    assert decision.reason == "Market conditions changed"

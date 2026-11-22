@@ -1,5 +1,6 @@
 
 from enum import Enum
+from functools import lru_cache
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,7 +13,6 @@ class Environment(str, Enum):
 
 
 class Settings(BaseSettings):
-
     app_name: str = "QuantEdge AI"
     app_env: Environment = Environment.DEVELOPMENT
     debug: bool = False
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
     )
 
     @model_validator(mode="after")
@@ -31,4 +31,6 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

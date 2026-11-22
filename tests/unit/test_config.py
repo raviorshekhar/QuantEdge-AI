@@ -2,7 +2,18 @@
 import pytest
 from pydantic import ValidationError
 
-from quantedge.shared.config import Environment, Settings
+from quantedge.shared.config import (
+    Environment,
+    Settings,
+    get_settings,
+)
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_default_settings(monkeypatch):
@@ -63,7 +74,6 @@ def test_production_debug_enabled_rejected():
         )
 
 
-
 def test_development_settings_fixture(development_settings):
     assert development_settings.app_env == Environment.DEVELOPMENT
     assert development_settings.debug is True
@@ -72,3 +82,43 @@ def test_development_settings_fixture(development_settings):
 def test_production_settings_fixture(production_settings):
     assert production_settings.app_env == Environment.PRODUCTION
     assert production_settings.debug is False
+
+
+def test_get_settings_returns_cached_instance():
+    first = get_settings()
+    second = get_settings()
+
+    assert first is second
+
+
+def test_get_settings_reads_environment_variables(monkeypatch):
+    monkeypatch.setenv("APP_NAME", "QuantEdge Test")
+    monkeypatch.setenv("APP_ENV", "testing")
+    monkeypatch.setenv("DEBUG", "false")
+
+    get_settings.cache_clear()
+
+    settings = get_settings()
+
+    assert settings.app_name == "QuantEdge Test"
+    assert settings.app_env == Environment.TESTING
+    assert settings.debug is False
+
+
+def test_get_settings_cache_clear_loads_updated_values(monkeypatch):
+    monkeypatch.setenv("APP_NAME", "QuantEdge First")
+    first = get_settings()
+
+    monkeypatch.setenv("APP_NAME", "QuantEdge Second")
+
+    # Cached instance should remain unchanged.
+    assert get_settings() is first
+    assert get_settings().app_name == "QuantEdge First"
+
+    # Clearing cache loads the updated environment.
+    get_settings.cache_clear()
+
+    second = get_settings()
+
+    assert second is not first
+    assert second.app_name == "QuantEdge Second"

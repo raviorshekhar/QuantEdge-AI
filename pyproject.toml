@@ -9,12 +9,12 @@ version = "0.1.0"
 description = "AI-powered Trading Guidance and Intelligence Platform"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic-settings>=2.0"
+    "pydantic-settings>=2.0",
+    "pyarrow>=18.0"
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
 
 [project.optional-dependencies]
 dev = [
