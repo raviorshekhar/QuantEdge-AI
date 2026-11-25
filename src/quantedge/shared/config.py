@@ -2,7 +2,7 @@
 from enum import Enum
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     app_name: str = "QuantEdge AI"
     app_env: Environment = Environment.DEVELOPMENT
     debug: bool = False
+
+    upstox_client_id: str | None = None
+    upstox_client_secret: SecretStr | None = None
+    upstox_redirect_uri: str | None = None
+    upstox_access_token: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

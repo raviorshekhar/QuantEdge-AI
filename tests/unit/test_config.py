@@ -122,3 +122,37 @@ def test_get_settings_cache_clear_loads_updated_values(monkeypatch):
 
     assert second is not first
     assert second.app_name == "QuantEdge Second"
+
+
+def test_upstox_settings_optional_by_default():
+    settings = Settings(_env_file=None)
+
+    assert settings.upstox_client_id is None
+    assert settings.upstox_client_secret is None
+    assert settings.upstox_redirect_uri is None
+    assert settings.upstox_access_token is None
+
+
+def test_upstox_settings_load_from_environment(monkeypatch):
+    monkeypatch.setenv("UPSTOX_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("UPSTOX_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setenv(
+        "UPSTOX_REDIRECT_URI",
+        "http://localhost:8000/auth/upstox/callback",
+    )
+    monkeypatch.setenv("UPSTOX_ACCESS_TOKEN", "test-access-token")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.upstox_client_id == "test-client-id"
+    assert (
+        settings.upstox_client_secret.get_secret_value()
+        == "test-client-secret"
+    )
+    assert settings.upstox_redirect_uri == (
+        "http://localhost:8000/auth/upstox/callback"
+    )
+    assert (
+        settings.upstox_access_token.get_secret_value()
+        == "test-access-token"
+    )

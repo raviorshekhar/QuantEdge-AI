@@ -6,7 +6,13 @@ import pytest
 from quantedge.instruments.master import InstrumentMaster
 from quantedge.instruments.models import Instrument, InstrumentType
 from quantedge.instruments.provider_mapping import InstrumentProviderMapping
+from decimal import Decimal
 
+from quantedge.instruments.models import (
+    Instrument,
+    InstrumentStatus,
+    InstrumentType,
+)
 
 @pytest.fixture
 def instrument_master():
@@ -331,3 +337,368 @@ def test_failed_overlapping_registration_does_not_modify_registry(
         instrument_master.register_mapping(second)
 
     assert instrument_master.get_mapping("QE-MAP-112") is None
+
+
+
+
+# Instrument metadata tests
+
+def test_future_accepts_trading_metadata(nifty_index):
+    future = Instrument(
+        instrument_id="QE-FUT-META-001",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="NIFTY Futures",
+        underlying_id=nifty_index.instrument_id,
+        expiry_date=date(2026, 11, 24),
+        lot_size=65,
+        tick_size=Decimal("0.05"),
+    )
+
+    assert future.lot_size == 65
+    assert future.tick_size == Decimal("0.05")
+
+
+def test_future_metadata_can_be_missing(nifty_future):
+    assert nifty_future.lot_size is None
+    assert nifty_future.tick_size is None
+
+
+def test_zero_lot_size_rejected(nifty_index):
+    with pytest.raises(ValueError):
+        Instrument(
+            instrument_id="QE-FUT-META-002",
+            exchange="NSE",
+            instrument_type=InstrumentType.FUTURE,
+            symbol="NIFTY",
+            name="NIFTY Futures",
+            underlying_id=nifty_index.instrument_id,
+            expiry_date=date(2026, 11, 24),
+            lot_size=0,
+        )
+
+
+def test_zero_tick_size_rejected(nifty_index):
+    with pytest.raises(ValueError):
+        Instrument(
+            instrument_id="QE-FUT-META-003",
+            exchange="NSE",
+            instrument_type=InstrumentType.FUTURE,
+            symbol="NIFTY",
+            name="NIFTY Futures",
+            underlying_id=nifty_index.instrument_id,
+            expiry_date=date(2026, 11, 24),
+            tick_size=Decimal("0"),
+        )
+
+
+def test_index_cannot_have_lot_size():
+    with pytest.raises(ValueError, match="index cannot have a lot_size"):
+        Instrument(
+            instrument_id="QE-INDEX-META-001",
+            exchange="NSE",
+            instrument_type=InstrumentType.INDEX,
+            symbol="NIFTY 50",
+            name="NIFTY 50 Index",
+            lot_size=65,
+        )
+
+
+# Provider mapping resolver tests
+
+def test_resolve_provider_instrument(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+    provider_mapping,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+    instrument_master.register_mapping(provider_mapping)
+
+    resolved = instrument_master.resolve_provider_instrument(
+        provider="ProviderA",
+        provider_instrument_id="123456",
+        as_of=date(2026, 11, 22),
+    )
+
+    assert resolved == nifty_future
+
+
+def test_resolver_returns_none_for_unknown_provider(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+    provider_mapping,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+    instrument_master.register_mapping(provider_mapping)
+
+    resolved = instrument_master.resolve_provider_instrument(
+        provider="UnknownProvider",
+        provider_instrument_id="123456",
+        as_of=date(2026, 11, 22),
+    )
+
+    assert resolved is None
+
+
+def test_resolver_returns_none_outside_mapping_validity(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    mapping = InstrumentProviderMapping(
+        mapping_id="QE-MAP-201",
+        instrument_id="QE-FUT-001",
+        provider="ProviderA",
+        provider_instrument_id="201",
+        provider_symbol="NIFTY26NOVFUT",
+        exchange="NSE",
+        segment="NFO",
+        valid_from=date(2026, 11, 1),
+        valid_to=date(2026, 11, 20),
+    )
+
+    instrument_master.register_mapping(mapping)
+
+    resolved = instrument_master.resolve_provider_instrument(
+        provider="ProviderA",
+        provider_instrument_id="201",
+        as_of=date(2026, 11, 21),
+    )
+
+    assert resolved is None
+
+
+def test_resolver_supports_adjacent_historical_mappings(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    first = InstrumentProviderMapping(
+        mapping_id="QE-MAP-202",
+        instrument_id="QE-FUT-001",
+        provider="ProviderA",
+        provider_instrument_id="202",
+        provider_symbol="NIFTY26NOVFUT",
+        exchange="NSE",
+        segment="NFO",
+        valid_from=date(2026, 11, 1),
+        valid_to=date(2026, 11, 15),
+    )
+
+    second = InstrumentProviderMapping(
+        mapping_id="QE-MAP-203",
+        instrument_id="QE-FUT-001",
+        provider="ProviderA",
+        provider_instrument_id="203",
+        provider_symbol="NIFTY26NOVFUT",
+        exchange="NSE",
+        segment="NFO",
+        valid_from=date(2026, 11, 16),
+    )
+
+    instrument_master.register_mapping(first)
+    instrument_master.register_mapping(second)
+
+    first_result = instrument_master.resolve_provider_instrument(
+        "ProviderA",
+        "202",
+        date(2026, 11, 15),
+    )
+
+    second_result = instrument_master.resolve_provider_instrument(
+        "ProviderA",
+        "203",
+        date(2026, 11, 16),
+    )
+
+    assert first_result == nifty_future
+    assert second_result == nifty_future
+
+
+def test_same_provider_instrument_id_cannot_map_to_two_instruments(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    other_future = Instrument(
+        instrument_id="QE-FUT-OTHER",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="Another NIFTY Futures Contract",
+        underlying_id="QE-INDEX-001",
+        expiry_date=date(2026, 12, 31),
+    )
+
+    instrument_master.register_instrument(other_future)
+
+    first = InstrumentProviderMapping(
+        mapping_id="QE-MAP-204",
+        instrument_id="QE-FUT-001",
+        provider="ProviderA",
+        provider_instrument_id="DUPLICATE-ID",
+        provider_symbol="NIFTY26NOVFUT",
+        exchange="NSE",
+        segment="NFO",
+        valid_from=date(2026, 11, 1),
+    )
+
+    second = InstrumentProviderMapping(
+        mapping_id="QE-MAP-205",
+        instrument_id="QE-FUT-OTHER",
+        provider="ProviderA",
+        provider_instrument_id="DUPLICATE-ID",
+        provider_symbol="NIFTY26DECFUT",
+        exchange="NSE",
+        segment="NFO",
+        valid_from=date(2026, 11, 1),
+    )
+
+    instrument_master.register_mapping(first)
+
+    with pytest.raises(
+        ValueError,
+        match="Provider instrument ID validity periods cannot overlap",
+    ):
+        instrument_master.register_mapping(second)
+
+
+# Futures discovery tests
+
+def test_get_futures_by_underlying(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    december_future = Instrument(
+        instrument_id="QE-FUT-DEC",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="NIFTY December Futures",
+        underlying_id="QE-INDEX-001",
+        expiry_date=date(2026, 12, 31),
+    )
+
+    instrument_master.register_instrument(december_future)
+
+    futures = instrument_master.get_futures_by_underlying(
+        underlying_id="QE-INDEX-001",
+    )
+
+    assert futures == [nifty_future, december_future]
+
+
+def test_get_futures_filters_by_status(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    inactive_future = Instrument(
+        instrument_id="QE-FUT-INACTIVE",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="Inactive NIFTY Futures",
+        underlying_id="QE-INDEX-001",
+        expiry_date=date(2026, 12, 31),
+        status=InstrumentStatus.INACTIVE,
+    )
+
+    instrument_master.register_instrument(inactive_future)
+
+    futures = instrument_master.get_futures_by_underlying(
+        underlying_id="QE-INDEX-001",
+        status=InstrumentStatus.ACTIVE,
+    )
+
+    assert futures == [nifty_future]
+
+
+def test_get_futures_filters_by_as_of_date(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    december_future = Instrument(
+        instrument_id="QE-FUT-DEC",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="NIFTY December Futures",
+        underlying_id="QE-INDEX-001",
+        expiry_date=date(2026, 12, 31),
+    )
+
+    instrument_master.register_instrument(december_future)
+
+    futures = instrument_master.get_futures_by_underlying(
+        underlying_id="QE-INDEX-001",
+        as_of=date(2026, 12, 1),
+    )
+
+    assert futures == [december_future]
+
+
+def test_get_futures_filters_by_expiry_range(
+    instrument_master,
+    nifty_index,
+    nifty_future,
+):
+    instrument_master.register_instrument(nifty_index)
+    instrument_master.register_instrument(nifty_future)
+
+    december_future = Instrument(
+        instrument_id="QE-FUT-DEC",
+        exchange="NSE",
+        instrument_type=InstrumentType.FUTURE,
+        symbol="NIFTY",
+        name="NIFTY December Futures",
+        underlying_id="QE-INDEX-001",
+        expiry_date=date(2026, 12, 31),
+    )
+
+    instrument_master.register_instrument(december_future)
+
+    futures = instrument_master.get_futures_by_underlying(
+        underlying_id="QE-INDEX-001",
+        expiry_from=date(2026, 11, 25),
+        expiry_to=date(2026, 12, 31),
+    )
+
+    assert futures == [december_future]
+
+
+def test_invalid_expiry_range_rejected(instrument_master):
+    with pytest.raises(
+        ValueError,
+        match="expiry_to cannot be earlier than expiry_from",
+    ):
+        instrument_master.get_futures_by_underlying(
+            underlying_id="QE-INDEX-001",
+            expiry_from=date(2026, 12, 31),
+            expiry_to=date(2026, 11, 24),
+        )

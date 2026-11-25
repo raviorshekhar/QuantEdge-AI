@@ -35,6 +35,7 @@ class MarketCandle(BaseModel):
     close: Decimal = Field(gt=0)
 
     volume: int | None = Field(default=None, ge=0)
+    open_interest: int | None = Field(default=None, ge=0)
 
     @field_validator("timestamp")
     @classmethod

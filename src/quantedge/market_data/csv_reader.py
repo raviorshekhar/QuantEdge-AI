@@ -76,6 +76,9 @@ def load_candles(file_path: str | Path) -> list[MarketCandle]:
                 if not row.get("volume"):
                     row["volume"] = None
 
+                if not row.get("open_interest"):
+                    row["open_interest"] = None
+
                 try:
                     candle = MarketCandle.model_validate(row)
                 except ValidationError as exc:

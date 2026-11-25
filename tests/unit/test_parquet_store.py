@@ -22,6 +22,7 @@ def sample_candles():
             low=Decimal("25095.0000"),
             close=Decimal("25110.0000"),
             volume=12500,
+            open_interest=185000,
         ),
         MarketCandle(
             instrument_id="QE-FUT-001",
@@ -31,6 +32,7 @@ def sample_candles():
             low=Decimal("25105.0000"),
             close=Decimal("25115.0000"),
             volume=11800,
+            open_interest=185250,
         ),
     ]
 
@@ -64,3 +66,44 @@ def test_read_missing_file_raises_error(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         read_candles(file_path)
+
+
+def test_parquet_preserves_open_interest(tmp_path):
+    file_path = tmp_path / "market_data_oi.parquet"
+
+    candle = MarketCandle(
+        instrument_id="QE-FUT-001",
+        timestamp=datetime(2026, 11, 18, 3, 45, tzinfo=timezone.utc),
+        open=Decimal("25100.0000"),
+        high=Decimal("25115.0000"),
+        low=Decimal("25095.0000"),
+        close=Decimal("25110.0000"),
+        volume=12500,
+        open_interest=185000,
+    )
+
+    write_candles([candle], file_path)
+    restored = read_candles(file_path)
+
+    assert len(restored) == 1
+    assert restored[0].open_interest == 185000
+    assert restored[0] == candle
+
+
+def test_parquet_preserves_missing_open_interest(tmp_path):
+    file_path = tmp_path / "market_data_no_oi.parquet"
+
+    candle = MarketCandle(
+        instrument_id="QE-FUT-001",
+        timestamp=datetime(2026, 11, 18, 3, 45, tzinfo=timezone.utc),
+        open=Decimal("25100.0000"),
+        high=Decimal("25115.0000"),
+        low=Decimal("25095.0000"),
+        close=Decimal("25110.0000"),
+        volume=12500,
+    )
+
+    write_candles([candle], file_path)
+    restored = read_candles(file_path)
+
+    assert restored[0].open_interest is None

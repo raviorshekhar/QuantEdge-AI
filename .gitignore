@@ -224,3 +224,9 @@ __marimo__/
 # Environment variables and secrets
 .env.*
 !.env.example
+
+
+# Generated market data and analytics outputs
+data/market_data/
+data/processed/
+outputs/

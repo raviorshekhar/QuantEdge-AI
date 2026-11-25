@@ -78,3 +78,56 @@ def test_missing_file_raises_error(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         load_candles(missing_file)
+
+
+def test_load_csv_with_open_interest(sample_csv):
+    content = sample_csv.read_text()
+    content = content.replace(
+        "volume",
+        "volume,open_interest",
+    ).replace(
+        "12500",
+        "12500,185000",
+    )
+    sample_csv.write_text(content, encoding="utf-8")
+
+    candles = load_candles(sample_csv)
+
+    assert candles[0].open_interest == 185000
+
+
+def test_missing_open_interest_column_is_none(sample_csv):
+    candles = load_candles(sample_csv)
+
+    assert candles[0].open_interest is None
+
+
+def test_blank_open_interest_is_none(sample_csv):
+    content = sample_csv.read_text()
+    content = content.replace(
+        "volume",
+        "volume,open_interest",
+    ).replace(
+        "12500",
+        "12500,",
+    )
+    sample_csv.write_text(content, encoding="utf-8")
+
+    candles = load_candles(sample_csv)
+
+    assert candles[0].open_interest is None
+
+
+def test_negative_open_interest_raises_error(sample_csv):
+    content = sample_csv.read_text()
+    content = content.replace(
+        "volume",
+        "volume,open_interest",
+    ).replace(
+        "12500",
+        "12500,-100",
+    )
+    sample_csv.write_text(content, encoding="utf-8")
+
+    with pytest.raises(CSVIngestionError, match="Invalid market data"):
+        load_candles(sample_csv)

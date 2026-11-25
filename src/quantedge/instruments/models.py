@@ -1,5 +1,6 @@
 
 from datetime import date
+from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -28,8 +29,15 @@ class Instrument(BaseModel):
     instrument_type: InstrumentType
     symbol: str
     name: str
+
     underlying_id: str | None = None
     expiry_date: date | None = None
+
+    # Exchange-provided trading specifications.
+    # Keep optional because metadata may not be available at registration time.
+    lot_size: int | None = Field(default=None, gt=0)
+    tick_size: Decimal | None = Field(default=None, gt=0)
+
     currency: str = "INR"
     status: InstrumentStatus = InstrumentStatus.ACTIVE
 
@@ -37,6 +45,7 @@ class Instrument(BaseModel):
     def validate_instrument(self):
 
         if self.instrument_type == InstrumentType.INDEX:
+
             if self.underlying_id is not None:
                 raise ValueError(
                     "An index cannot have an underlying_id"
@@ -47,7 +56,13 @@ class Instrument(BaseModel):
                     "An index cannot have an expiry_date"
                 )
 
+            if self.lot_size is not None:
+                raise ValueError(
+                    "An index cannot have a lot_size"
+                )
+
         if self.instrument_type == InstrumentType.FUTURE:
+
             if not self.underlying_id:
                 raise ValueError(
                     "A futures contract requires an underlying_id"
